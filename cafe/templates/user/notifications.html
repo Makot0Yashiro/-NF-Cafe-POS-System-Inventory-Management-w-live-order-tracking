@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Notifications · New Found Cafe{% endblock %}
+{% block content %}
+<p class="eyebrow"><i></i><b></b>Updates from the cafe</p>
+<h1>Notifications</h1>
+<p class="lead">Order status changes, new menu items, and promotions appear here.</p>
+{% for n in notifications %}
+<article class="card notification-card{{ ' unread' if not n.read_at }}" data-notice="{{ n.id }}">
+  <div class="notice-head"><h2>{{ n.title }}</h2><span class="badge">{{ n.kind }}</span></div>
+  <p>{{ n.body }}</p><small>{{ n.created_at }}</small>
+  {% if not n.read_at %}<button class="btn small ghost mark-read">Mark as read</button>{% else %}<small class="read-label">Read</small>{% endif %}
+</article>
+{% else %}<p class="card">You're all caught up. New order updates and cafe announcements will show here.</p>{% endfor %}
+<script>
+const csrf = document.querySelector('meta[name=csrf]').content;
+document.querySelectorAll('.mark-read').forEach(button => button.onclick = async () => {
+  const card = button.closest('[data-notice]');
+  try {
+    const r = await fetch(`/api/notifications/${card.dataset.notice}/read`, {
+      method: 'POST', headers: {'X-CSRFToken': csrf}
+    });
+    const result = await r.json();
+    if (!r.ok) throw new Error(result.error || 'Could not mark this notification as read.');
+    button.remove(); card.classList.remove('unread');
+    const read = document.createElement('small'); read.className = 'read-label'; read.textContent = 'Read'; card.appendChild(read);
+    const badge = document.getElementById('notify-count');
+    if (badge) {
+      const count = Math.max(0, Number(badge.textContent) - 1);
+      badge.textContent = count; badge.hidden = count === 0;
+    }
+  } catch (error) { alert(error.message); }
+});
+</script>
+{% endblock %}

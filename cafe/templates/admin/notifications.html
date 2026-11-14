@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "admin/dock.html" import dock %}
+{% block mainclass %}wide full{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/inventory.css') }}">{% endblock %}
+{% block title %}Notifications · New Found Cafe{% endblock %}
+{% block content %}
+<p class="eyebrow"><i></i><b></b>Cafe announcements</p>
+<h1>Send notifications</h1>
+<p class="lead">Send a message to every customer account.</p>
+{% call dock("notifications", "Create notification", 300) %}
+<form class="notification-compose dock-notification-form" method="post" action="{{ url_for('notifications.broadcast') }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token }}">
+  <label>Notification type<select name="kind"><option value="promo">Promotion</option><option value="menu">New menu item</option><option value="announcement">Announcement</option></select></label>
+  <label>Title<input name="title" maxlength="120" required placeholder="e.g. New drinks are here"></label>
+  <label>Message<textarea name="body" maxlength="500" rows="2" required placeholder="Write the update customers will see"></textarea></label>
+  <button class="btn">Send to all customers</button>
+</form>
+{% endcall %}
+<div class="notice-tabs" role="tablist" aria-label="Notification history">
+  <button type="button" class="on" data-notice-tab="recent" role="tab" aria-selected="true" aria-controls="notice-recent">Recently sent</button>
+  <button type="button" data-notice-tab="orders" role="tab" aria-selected="false" aria-controls="notice-orders">Order history <span class="notice-unread" id="order-unread"></span></button>
+</div>
+<section class="notice-section" id="notice-recent" role="tabpanel">
+  {% for n in history %}
+  <article class="card notification-card">
+    <div class="notice-head"><h2>{{ n.title }}</h2><span class="badge">{{ n.kind }}</span></div>
+    <p>{{ n.body }}</p><small>{{ n.created_at }} · {{ n.recipients }} recipients</small>
+  </article>
+  {% else %}<p>No announcements have been sent yet.</p>{% endfor %}
+</section>
+<section class="notice-section" id="notice-orders" role="tabpanel" hidden>
+  {% for n in order_history %}
+  <article class="card notification-card{{ ' unread' if not n.read_at }}" data-order-notice="{{ n.id }}">
+    <a class="order-notice-open" href="{{ url_for('admin.orders_page') }}" aria-label="Open Order Management for order {{ n.order_id }}">
+      <div class="notice-head"><h2>{{ n.title }}</h2><span class="badge">{{ n.kind }}</span></div>
+      <p>{{ n.body }}</p><small>{{ n.created_at }}</small>
+    </a>
+    {% if not n.read_at %}<button type="button" class="btn small ghost admin-mark-read">Mark as read</button>{% else %}<small class="read-label">Read</small>{% endif %}
+  </article>
+  {% else %}<p>No new orders or cancellations have been recorded.</p>{% endfor %}
+</section>
+<script>
+document.querySelectorAll('[data-notice-tab]').forEach(button => button.onclick = () => {
+  const active = button.dataset.noticeTab;
+  document.querySelectorAll('[data-notice-tab]').forEach(tab => {
+    const selected = tab === button;
+    tab.classList.toggle('on', selected); tab.setAttribute('aria-selected', selected);
+  });
+  document.getElementById('notice-recent').hidden = active !== 'recent';
+  document.getElementById('notice-orders').hidden = active !== 'orders';
+});
+const csrf = document.querySelector('meta[name=csrf]').content;
+document.querySelectorAll('.admin-mark-read').forEach(button => button.onclick = async () => {
+  const card = button.closest('[data-order-notice]');
+  try {
+    const response = await fetch(`/admin/api/notifications/${card.dataset.orderNotice}/read`, {
+      method: 'POST', headers: {'X-CSRFToken': csrf}
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not mark this order notification as read.');
+    button.remove(); card.classList.remove('unread');
+    const read = document.createElement('small'); read.className = 'read-label'; read.textContent = 'Read'; card.appendChild(read);
+    const unreadBadge = document.getElementById('order-unread');
+    if (unreadBadge && unreadBadge.textContent) {
+      const unread = Math.max(0, Number(unreadBadge.textContent) - 1);
+      unreadBadge.textContent = unread || '';
+    }
+    updateAdminNotificationCount().catch(error => console.error(error));
+  } catch (error) { alert(error.message); }
+});
+const unreadOrders = document.querySelectorAll('[data-order-notice].unread').length;
+if (unreadOrders) document.getElementById('order-unread').textContent = unreadOrders;
+</script>
+<script type="module">
+import {createDock} from "{{ url_for('static', filename='js/admin/dock.js') }}";
+createDock();
+</script>
+{% endblock %}

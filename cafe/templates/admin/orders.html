@@ -12,18 +12,19 @@
 <div class="two">
   <section>
     {% for o in orders %}
+    {% set status_locked = o.status in ('Completed', 'Delivered') %}
     <div class="card order" data-id="{{ o.id }}">
       <div class="row"><h2>Order #{{ o.id }}</h2><span class="badge" data-status>{{ o.status }}</span></div>
       <small>{{ o.customer }} · {{ o.when }} · {{ o.order_type }}</small>
-      <ul>{% for i in o['items'] %}<li>{{ i.qty }} × {{ i.name }}</li>{% endfor %}</ul>
+      <ul>{% for i in o['items'] %}<li>{{ i.qty }} × {{ i.name }}{% if i.note %} <small>— {{ i.note }}</small>{% endif %}</li>{% endfor %}</ul>
       {% if o.note %}<small>Note: {{ o.note }}</small>{% endif %}
       {% if o.order_type == 'delivery' and o.address %}<p style="margin:.3rem 0">Deliver to: {{ o.address }}</p>{% endif %}
       <div class="row"><span><b>{{ 'Online (QR)' if o.payment == 'online' else 'Cash' }}</b> <span class="pbadge" data-pay></span>{% if o.pay_ref %} <small>Ref: {{ o.pay_ref }}</small>{% endif %}</span>
         <span><button class="btn small payok">Confirm payment</button> {% if o.payment == 'online' %}<button class="btn small ghost payno">Not received</button>{% endif %}</span></div>
       <div class="row" style="margin-top:.8rem"><b>₱{{ '{:,.0f}'.format(o.total) }}</b>
         <span style="display:flex;gap:.4rem;align-items:center">
-          <select class="stsel" style="margin:0;width:auto;padding:.4rem .8rem">{% for c in o.choices %}<option {{ 'selected' if c == o.status }}>{{ c }}</option>{% endfor %}</select>
-          <button class="btn small save">Update</button><button class="btn small ghost trk">Track</button></span></div>
+          <select class="stsel" style="margin:0;width:auto;padding:.4rem .8rem" {{ 'disabled' if status_locked }}>{% for c in o.choices %}<option {{ 'selected' if c == o.status }}>{{ c }}</option>{% endfor %}</select>
+          <button class="btn small save" {{ 'disabled' if status_locked }}>Update</button><button class="btn small ghost trk">Track</button></span></div>
     </div>
     {% else %}<p>No orders here yet.</p>{% endfor %}
   </section>
@@ -45,6 +46,8 @@ function show(o) {
   document.getElementById('steps').innerHTML = o.steps.map((s, n) => `<li class="${n <= i ? 'done' : ''}">${s}</li>`).join('');
   const card = document.querySelector(`.order[data-id="${o.id}"]`);
   card.querySelector('[data-status]').textContent = o.status; card.querySelector('.stsel').value = o.status; paintPay(card, o);
+  const locked = o.status === 'Completed' || o.status === 'Delivered';
+  card.querySelector('.stsel').disabled = locked; card.querySelector('.save').disabled = locked;
   const pos = [o.lat ?? cafe[0], o.lng ?? cafe[1]];
   if (!courier) courier = L.circleMarker(pos, {radius: 9, color: '#43301f', fillColor: '#d4793f', fillOpacity: 1}).addTo(map);
   courier.setLatLng(pos).bindTooltip('Order location');
@@ -74,7 +77,12 @@ document.querySelectorAll('.order').forEach(c => {
   c.querySelector('.save').onclick = async () => {
     const r = await fetch(`/admin/api/orders/${id}/status`, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
       body: JSON.stringify({status: c.querySelector('.stsel').value})});
-    if (r.ok) { const o = await r.json(); c.querySelector('[data-status]').textContent = o.status; if (sel === id) show(o); } else alert((await r.json().catch(() => ({}))).error || 'Could not update status');
+    if (r.ok) {
+      const o = await r.json(); c.querySelector('[data-status]').textContent = o.status;
+      const locked = o.status === 'Completed' || o.status === 'Delivered';
+      c.querySelector('.stsel').disabled = locked; c.querySelector('.save').disabled = locked;
+      if (sel === id) show(o);
+    } else alert((await r.json().catch(() => ({}))).error || 'Could not update status');
   };
 });
 </script>

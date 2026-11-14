@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block mainclass %}wide{% endblock %}
 {% set layers %}<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5zm0 12.2-7.5-3.7L2 12.8l10 5 10-5-2.5-1.3-7.5 3.7z"/></svg>{% endset %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
 {% block content %}
 <div class="pos">
   <section>
@@ -17,7 +21,7 @@
     <p class="label"><span id="curlabel">All items</span><span id="curcount"></span></p>
     <div class="items">
       {% for g in groups %}{% for c in g.cats %}{% for i in c['items'] %}
-      <button class="tile{{ ' out' if i.sold_out }}" data-cat="{{ c.id }}" data-id="{{ i.id }}" data-name="{{ i.name }}" data-price="{{ i.price }}" data-e="{{ c.emoji }}" style="--c:{{ c.color }}"{% if i.sold_out %} disabled aria-label="{{ i.name }}, sold out"{% endif %}>
+      <button class="tile{{ ' out' if i.sold_out }}" data-cat="{{ c.id }}" data-id="{{ i.id }}" data-name="{{ i.name }}" data-price="{{ i.price }}" data-e="{{ c.emoji }}" data-img="{{ i.img }}" data-recipe='{{ i.recipe|tojson }}' style="--c:{{ c.color }}"{% if i.sold_out %} disabled aria-label="{{ i.name }}, sold out"{% endif %}>
         <img src="{{ i.img }}" alt="" loading="lazy" onerror="this.style.display='none'">
         {% if i.sold_out %}<span class="soldout">Sold out</span>{% endif %}
         <span class="q">0</span><span class="txt"><b>{{ i.name }}</b><span>₱{{ i.price }}</span></span>
@@ -48,7 +52,12 @@
     <div id="tab-details" hidden>
       <label>Order type
         <select id="otype"><option value="dine-in">Dine-in</option><option value="pickup">Pickup</option><option value="delivery">Delivery</option></select></label>
-      <label id="addrlbl" hidden>Delivery address<input id="addr" maxlength="200" placeholder="House no., street, barangay"></label>
+      <div id="addrlbl" hidden>
+        <label for="addr">Delivery address</label><input id="addr" maxlength="200" placeholder="House no., street, barangay">
+        <small>Tap the map to pin your delivery location.</small>
+        <div class="delivery-map-actions"><button type="button" class="btn small ghost" id="locate">Locate me</button></div>
+        <div id="delivery-map" class="delivery-map"></div>
+      </div>
       <label>Coupon<input id="coupon" placeholder="WELCOME10"></label>
       <label>Note<input id="note" maxlength="200"></label>
     </div>
@@ -56,10 +65,23 @@
     <p id="err" class="flash" style="margin-top:1rem" hidden></p>
   </aside>
 </div>
+<dialog id="item-details" class="item-dialog">
+  <button type="button" class="item-dialog-close" aria-label="Close">&times;</button>
+  <img id="detail-image" alt="">
+  <div class="item-dialog-body">
+    <h2 id="detail-name"></h2>
+    <p class="detail-price">₱<span id="detail-price"></span></p>
+    <h3>Ingredients</h3><p id="detail-ingredients"></p>
+    <label for="item-note">Customize this item</label>
+    <textarea id="item-note" maxlength="200" rows="3" placeholder="e.g. less sugar, no ice"></textarea>
+    <button type="button" class="btn full" id="add-item">Add to order</button>
+  </div>
+</dialog>
 <script>
 const me = {{ me|tojson }}, coupons = {{ coupons|tojson }}, cart = {}, $ = id => document.getElementById(id);
 const tiles = [...document.querySelectorAll('.tile')];
 let cat = 'all';
+let selected = null, deliveryMap = null, deliveryPin = null, deliveryPosition = null;
 let pay = me.pay_method === 'cash' ? 'cash' : 'online';
 $('addr').value = me.address;
 $('allcount').textContent = tiles.length + ' items';
@@ -92,6 +114,7 @@ function draw() {
     const d = document.createElement('div'); d.className = 'line';
     d.innerHTML = `<b></b><span>₱${money(c.price * c.qty)}</span><span class="stp"><button aria-label="Less">−</button>${c.qty}<button aria-label="More">+</button></span>`;
     d.querySelector('b').textContent = c.name;
+    if (c.note) { const note = document.createElement('small'); note.className = 'cart-note'; note.textContent = 'Note: ' + c.note; d.appendChild(note); }
     const [less, more] = d.querySelectorAll('button');
     less.onclick = () => { if (--c.qty <= 0) delete cart[id]; draw(); }; more.onclick = () => { c.qty++; draw(); };
     $('cart').appendChild(d); });
@@ -102,24 +125,68 @@ function draw() {
   $('payamt').textContent = money(sub - off);
   tiles.forEach(t => { const q = cart[t.dataset.id]?.qty || 0; t.classList.toggle('has', q > 0); t.querySelector('.q').textContent = q; });
 }
-tiles.forEach(t => t.onclick = () => { (cart[t.dataset.id] ||= {name: t.dataset.name, price: +t.dataset.price, qty: 0}).qty++; draw(); });
+const details = $('item-details');
+$('detail-image').onerror = () => { $('detail-image').hidden = true; };
+function openDetails(tile) {
+  selected = tile;
+  $('detail-name').textContent = tile.dataset.name;
+  $('detail-price').textContent = money(+tile.dataset.price);
+  const recipe = JSON.parse(tile.dataset.recipe || '[]');
+  $('detail-ingredients').textContent = recipe.length
+    ? recipe.map(part => `${part.qty} ${part.unit} ${part.name}`).join(', ')
+    : 'Ask our team about ingredients.';
+  $('detail-image').hidden = !tile.dataset.img;
+  if (tile.dataset.img) $('detail-image').src = tile.dataset.img;
+  $('detail-image').alt = tile.dataset.name;
+  $('item-note').value = cart[tile.dataset.id]?.note || '';
+  details.showModal();
+}
+tiles.forEach(t => t.onclick = () => openDetails(t));
+$('add-item').onclick = () => {
+  const c = cart[selected.dataset.id] ||= {name: selected.dataset.name, price: +selected.dataset.price, qty: 0, note: ''};
+  c.qty++; c.note = $('item-note').value.trim(); details.close(); draw();
+};
+details.querySelector('.item-dialog-close').onclick = () => details.close();
 $('coupon').oninput = draw; draw();
-$('otype').onchange = () => { $('addrlbl').hidden = $('otype').value !== 'delivery'; };
+$('otype').onchange = () => {
+  const delivery = $('otype').value === 'delivery';
+  $('addrlbl').hidden = !delivery;
+  if (delivery) setTimeout(initDeliveryMap, 0);
+};
 function setPay(p) { pay = p; document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.dataset.pay === p)); $('qr').hidden = p !== 'online'; }
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => setPay(b.dataset.pay)); setPay(pay);
 
 /* place order */
-const getPos = () => me.lat != null ? Promise.resolve({dest_lat: me.lat, dest_lng: me.lng}) :
-  new Promise(res => navigator.geolocation ? navigator.geolocation.getCurrentPosition(
-    p => res({dest_lat: p.coords.latitude, dest_lng: p.coords.longitude}), () => res({}), {timeout: 6000}) : res({}));
+function setDeliveryPin(pos) {
+  deliveryPosition = pos;
+  if (!deliveryPin) deliveryPin = L.marker(pos, {draggable: true}).addTo(deliveryMap);
+  deliveryPin.setLatLng(pos);
+  deliveryPin.off('dragend').on('dragend', e => { const p = e.target.getLatLng(); deliveryPosition = [p.lat, p.lng]; });
+}
+function initDeliveryMap() {
+  if (!deliveryMap) {
+    deliveryMap = L.map('delivery-map').setView([me.lat ?? cafe[0], me.lng ?? cafe[1]], me.lat != null ? 16 : 13);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(deliveryMap);
+    deliveryMap.on('click', e => setDeliveryPin([e.latlng.lat, e.latlng.lng]));
+  }
+  if (me.lat != null && !deliveryPosition) setDeliveryPin([me.lat, me.lng]);
+  setTimeout(() => deliveryMap.invalidateSize(), 50);
+}
+$('locate').onclick = () => {
+  if (!navigator.geolocation) return fail('Location is not available in this browser. Tap the map to choose a pin.');
+  navigator.geolocation.getCurrentPosition(p => {
+    const pos = [p.coords.latitude, p.coords.longitude]; initDeliveryMap(); setDeliveryPin(pos); deliveryMap.setView(pos, 16);
+  }, () => fail('Could not access your location. Allow location access or tap the map to choose a pin.'), {timeout: 10000});
+};
 const fail = msg => { $('err').hidden = false; $('err').textContent = msg; };
 $('place').onclick = async () => {
-  const items = Object.entries(cart).map(([id, c]) => ({id, qty: c.qty}));
+  const items = Object.entries(cart).map(([id, c]) => ({id, qty: c.qty, note: c.note || ''}));
   const body = {items, order_type: $('otype').value, payment: pay, ref: $('ref').value, coupon: $('coupon').value, note: $('note').value, address: $('addr').value};
   if (pay === 'online' && body.ref.trim().length < 4) return fail('Scan the QR to pay, then enter the reference number from your receipt.');
   if (body.order_type === 'delivery') {
     if (!body.address.trim()) return fail('Please enter your delivery address.');
-    Object.assign(body, await getPos());
+    if (!deliveryPosition && me.lat != null) deliveryPosition = [me.lat, me.lng];
+    if (deliveryPosition) { body.dest_lat = deliveryPosition[0]; body.dest_lng = deliveryPosition[1]; }
   }
   try {
     const r = await fetch('/api/orders', {method: 'POST', headers: {'Content-Type': 'application/json',

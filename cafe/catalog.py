@@ -86,6 +86,8 @@ def customer_groups():
     for row in items(active_only=True):
         by_cat[row["cat_id"]].append({"id": row["id"], "name": row["name"], "price": num(row["price"]),
                                       "img": photo_url(row), "cat": row["cat_name"],
+                                      "recipe": [{"name": part["name"], "qty": num(part["qty"]), "unit": part["unit"]}
+                                                 for part in row["recipe"]],
                                       "sold_out": servings(row["recipe"]) < 1})
     groups = {}
     for category_data in categories():

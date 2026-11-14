@@ -49,4 +49,4 @@ def account():
             except IntegrityError:
                 flash("That email is already used by another account.")
         return redirect(url_for("account.account"))
-    return render_template("account.html", me=profile(session["user_id"]), pay=PAY, cafe=CAFE_LOCATION)
+    return render_template("user/account.html", me=profile(session["user_id"]), pay=PAY, cafe=CAFE_LOCATION)

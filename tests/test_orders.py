@@ -79,6 +79,63 @@ def test_customer_sees_and_tracks_own_orders_only(app, admin, customer):
     assert logged_in(app, other_uid, "Other").get(f"/api/orders/{oid}/track").status_code == 404
 
 
+def test_customer_can_cancel_only_their_received_order(admin, customer):
+    set_stock(admin, "Potatoes", 5000)
+    oid = place_order(customer, [{"id": "fries", "qty": 1}]).get_json()["id"]
+    assert customer.post(f"/api/orders/{oid}/cancel", headers=H).status_code == 200
+    assert stock("Potatoes") == 5000
+    assert customer.post(f"/api/orders/{oid}/cancel", headers=H).status_code == 409
+
+    active = place_order(customer, [{"id": "fries", "qty": 1}]).get_json()["id"]
+    status(admin, active, "Preparing")
+    response = customer.post(f"/api/orders/{active}/cancel", headers=H)
+    assert response.status_code == 409 and "Received" in response.get_json()["error"]
+
+
+def test_completed_and_delivered_orders_cannot_change_status(admin, customer):
+    completed = place_order(customer, [{"id": "fries", "qty": 1}]).get_json()["id"]
+    assert status(admin, completed, "Completed").status_code == 200
+    response = status(admin, completed, "Received")
+    assert response.status_code == 409 and "cannot be changed" in response.get_json()["error"]
+    assert q("SELECT status FROM orders WHERE id=%s", (completed,))[0]["status"] == "Completed"
+
+    delivered = place_order(customer, [{"id": "fries", "qty": 1}], order_type="delivery",
+                            address="10 Cafe Street").get_json()["id"]
+    status(admin, delivered, "Out for delivery")
+    assert status(admin, delivered, "Delivered").status_code == 200
+    assert status(admin, delivered, "Out for delivery").status_code == 409
+
+
+def test_custom_item_notes_and_order_updates_are_notified(admin, customer):
+    set_stock(admin, "Potatoes", 5000)
+    oid = place_order(customer, [{"id": "fries", "qty": 1, "note": "Extra crispy"}]).get_json()["id"]
+    order = customer.get("/api/orders").get_json()[0]
+    assert order["items"][0]["note"] == "Extra crispy"
+    assert status(admin, oid, "Preparing").status_code == 200
+    notices = customer.get("/api/notifications").get_json()
+    assert notices["unread"] >= 2
+    assert any("Preparing" in n["body"] for n in notices["notifications"])
+
+
+def test_admin_gets_new_and_cancelled_order_alerts_and_receipt_has_no_map_data(admin, customer):
+    set_stock(admin, "Potatoes", 5000)
+    oid = place_order(customer, [{"id": "fries", "qty": 1}]).get_json()["id"]
+    receipts = admin.get("/admin/api/order-receipts")
+    assert receipts.status_code == 200
+    receipt = next(row for row in receipts.get_json() if row["id"] == oid)
+    assert receipt["items"][0]["name"] == "Fries"
+    assert not {"lat", "lng", "dest", "dest_lat", "dest_lng"} & receipt.keys()
+    assert customer.post(f"/api/orders/{oid}/cancel", headers=H).status_code == 200
+
+    page = admin.get("/admin/notifications").get_data(as_text=True)
+    assert f"New order #{oid}" in page and f"Order #{oid} cancelled" in page
+    assert 'href="/admin/orders"' in page and "Open Order Management" in page
+    assert admin.get("/admin/api/notifications").get_json()["unread"] >= 2
+    assert customer.get("/admin/api/order-receipts").status_code == 404
+    assert customer.get("/admin/api/notifications").status_code == 404
+    assert customer.get("/admin/notifications").status_code == 404
+
+
 # ---------- status / payment changes and stock ----------
 def test_cancel_at_received_returns_stock_once_and_reopen_takes_it_again(admin, customer):
     set_stock(admin, "Potatoes", 5000)

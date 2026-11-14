@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "admin_dock.html" import dock %}
+{% from "admin/dock.html" import dock %}
 {% block mainclass %}wide full{% endblock %}
 {% block title %}Inventory · New Found Cafe{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/inventory.css') }}">{% endblock %}
@@ -12,8 +12,11 @@
 </div>
 
 <div class="toolbar">
-  <div class="chips" id="filters" role="group" aria-label="Filter ingredients">
-    <button type="button" data-f="all" class="on">All</button><button type="button" data-f="low">Low stock</button><button type="button" data-f="out">Out of stock</button>
+  <div class="filter-controls">
+    <div class="chips" id="filters" role="group" aria-label="Filter ingredients">
+      <button type="button" data-f="all" class="on">All</button><button type="button" data-f="low">Low stock</button><button type="button" data-f="out">Out of stock</button>
+    </div>
+    <button type="button" class="btn small ghost history-open" id="history-open">Stock history</button>
   </div>
   <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="q" type="search" placeholder="Search ingredients" autocomplete="off" aria-label="Search ingredients"></label>
 </div>
@@ -42,10 +45,15 @@
     <h2 id="rs-title">Restock</h2>
     <p class="rs-line">Current stock: <b id="rs-now"></b></p>
     <label>Amount to add<span class="unitfield"><input id="rs-amt" type="number" min="0" step="any" required><em id="rs-unit"></em></span></label>
+    <label>Supplier / source<input id="rs-source" maxlength="120" placeholder="e.g. Local supplier or delivery batch"></label>
     <p class="rs-line">After restock: <b id="rs-after">–</b></p>
     <p class="ferr" id="rs-err" role="alert" hidden></p>
     <div class="modal-acts"><button type="button" class="btn ghost" id="rs-cancel">Cancel</button><button class="btn">Add stock</button></div>
   </form>
+</dialog>
+<dialog id="history" class="modal wide" aria-labelledby="history-title">
+  <div class="modal-head"><h2 id="history-title">Stocking history</h2><button type="button" class="xbtn" id="history-close" aria-label="Close">×</button></div>
+  <div id="history-list"><p class="note">Loading stocking history…</p></div>
 </dialog>
 <script type="module" src="{{ url_for('static', filename='js/admin/inventory.js') }}"></script>
 {% endblock %}

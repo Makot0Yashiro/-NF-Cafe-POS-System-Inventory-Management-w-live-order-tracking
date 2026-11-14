@@ -21,12 +21,14 @@ If VS Code asks for an interpreter, choose the one inside `.venv`.
 ## Pages (blueprints)
 | URL | Blueprint file | Template | Login needed |
 |---|---|---|---|
-| `/` | `cafe/blueprints/main.py` | `home.html` | no |
-| `/login`, `/register`, `POST /logout` | `cafe/blueprints/auth.py` | `auth.html` | no |
-| `/account` | `cafe/blueprints/account.py` | `account.html` | yes |
-| `/menu` | `cafe/blueprints/menu.py` | `menu.html` | yes |
-| `/your-order` | `cafe/blueprints/orders.py` | `order.html` | yes |
+| `/` | `cafe/blueprints/main.py` | `user/home.html` | no |
+| `/login`, `/register`, `POST /logout` | `cafe/blueprints/auth.py` | `user/auth.html` | no |
+| `/account` | `cafe/blueprints/account.py` | `user/account.html` | yes |
+| `/menu` | `cafe/blueprints/menu.py` | `user/menu.html` | yes |
+| `/your-order` | `cafe/blueprints/orders.py` | `user/order.html` | yes |
 | `POST /api/orders`, `GET /api/orders` | `cafe/blueprints/orders.py` | — | yes |
+| `/notifications` | `cafe/blueprints/notifications.py` | `user/notifications.html` | yes |
+| `/admin/notifications` | `cafe/blueprints/notifications.py` | `admin/notifications.html` | admin |
 
 All blueprints are registered in **`cafe/blueprints/__init__.py`**.
 To protect any page, add `@login_required` (from `cafe/auth_utils.py`) under its route.
@@ -41,8 +43,10 @@ Passwords are never stored in plain text (hashed with Werkzeug/scrypt).
 - **Settings (database, email, admin account, secret key):** environment variables / `.env` - see `.env.example`
 - **Colors / fonts / layout:** `cafe/static/css/cafe.css`
 - **Shared header & layout:** `cafe/templates/base.html`
-- **Login / register page:** `cafe/templates/auth.html`
-- **Landing page:** `cafe/templates/home.html`
+- **Customer page templates:** `cafe/templates/user/`
+- **Admin page templates:** `cafe/templates/admin/`
+- **Shared layout / errors:** `cafe/templates/base.html`, `cafe/templates/error.html`
+- **Landing page:** `cafe/templates/user/home.html`
 - **Landing-page photo carousel:** photos in the `GALLERY` list in `cafe/blueprints/main.py` (use a URL or a file in `cafe/static/images/`); colours/animation in `cafe/static/css/gallery.css`, behaviour in `cafe/static/js/gallery.js` (Splide is bundled in `cafe/static/vendor/splide/`)
 
 ## Security notes
@@ -56,6 +60,9 @@ Passwords are never stored in plain text (hashed with Werkzeug/scrypt).
 - After **Place order** on `/menu` you land on `/your-order?order=ID`. `/your-order` lists all your orders with a live status badge,
   and a **Leaflet / OpenStreetMap** map shows where the order currently is (refreshes every 5 s via `GET /api/orders/<id>/track`).
 - Statuses are set by the admin: Received → Preparing → Ready → Out for delivery → Delivered (delivery) or … → Completed (dine-in / takeaway), or Cancelled.
+- Customers can cancel an order while it is still Received. Delivered and Completed orders are locked against further status changes.
+- Selecting a menu item opens its photo, price and recipe; customers can add a per-item customization note. Delivery checkout includes a Leaflet map pin and browser location option.
+- The header's **Notifications** page shows order and payment updates plus cafe announcements and promotions. Admins can broadcast new-menu-item notices, promotions and announcements to all customers from **Admin → Notifications**.
 - Delivery orders use the saved Account pin (or the browser location) as the destination.
 - The map marker sits at the cafe until the admin sets **Out for delivery**, then moves to the customer over `TRIP_SECONDS`
   (`cafe/blueprints/orders.py`, demo animation). For a real courier, write `cur_lat` / `cur_lng` to the `orders` table from your driver app.
@@ -70,16 +77,18 @@ destination. Order history/tracking lives on **Your Order** (`/your-order`). Onl
   accounts, and `/admin` pages show "not found" to anyone who isn't an admin.
 - Default admin: **admin@newfoundcafe.com / admin123**, created on first run. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` before the first run
   to choose your own. Any user can be made admin with `UPDATE users SET is_admin=1 WHERE email='...'`.
-- Admins can only use **Analytics** (`/admin`), **Orders** (`/admin/orders`), **Inventory** (`/admin/inventory`) and **Menu items**
-  (`/admin/menu-items`): they can't open the menu, account or your-order pages or place orders.
+- Admins can use **Analytics** (`/admin`), **Orders** (`/admin/orders`), **Inventory** (`/admin/inventory`), **Menu items**
+  (`/admin/menu-items`) and **Notifications** (`/admin/notifications`): they can't open the menu, account or your-order pages or place orders.
 - `/admin` = sales analytics; `/admin/orders` = change status (customers see it instantly), filter, and track orders on a Leaflet map.
-- Code: `cafe/blueprints/admin.py`, `auth.py`, templates `admin_*.html`.
+- **Notifications** = broadcast promos/menu announcements and review new-order/cancellation alerts. Menu items has a receipt-only order viewer (no map).
+- Code: `cafe/blueprints/admin.py`, `auth.py`, templates in `cafe/templates/admin/`.
 
 ## Menu and inventory
 The menu lives in the database and is managed by the admin:
 - **Admin -> Menu items** (`/admin/menu-items`): add, edit, hide or delete items (name, category, price, photo URL). Every item needs at least
   one ingredient with the amount used per serving. **Manage categories** adds or edits categories and the group they appear under (Food, Beverages, ...).
 - **Admin -> Inventory** (`/admin/inventory`): ingredients, stock levels, low-stock alerts and restocking.
+- **Stock history** beside the inventory filters records each restock's quantity, supplier/source, staff member and timestamp.
 - Placing an order takes its ingredients out of stock (all or nothing; an order that needs more than is left is refused with a message).
   An item whose ingredients can't cover one serving shows as **Sold out** on the menu.
 - Cancelling an order (or pressing *Not received* on its payment) while it is still **Received** puts the ingredients back. From

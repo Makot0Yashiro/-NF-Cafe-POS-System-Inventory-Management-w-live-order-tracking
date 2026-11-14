@@ -16,7 +16,7 @@
 <div class="card order" data-id="{{ o.id }}">
   <div class="row"><h2>Order #{{ o.id }}</h2><span class="badge" data-status></span></div>
   <small data-meta></small>
-  <ul>{% for i in o['items'] %}<li>{{ i.qty }} × {{ i.name }}</li>{% endfor %}</ul>
+  <ul>{% for i in o['items'] %}<li>{{ i.qty }} × {{ i.name }}{% if i.note %} <small>— {{ i.note }}</small>{% endif %}</li>{% endfor %}</ul>
   <p>Total: ₱{{ '{:,.2f}'.format(o.total) }}</p>
   {% if o.order_type == 'delivery' %}<p>Delivery address: {{ o.address or 'Pinned location' }}</p>{% endif %}
   <p>Payment: <span class="pbadge" data-pay></span></p>
@@ -24,6 +24,7 @@
     <div class="qr"><img src="{{ url_for('static', filename='images/gcash-qr.png') }}" alt="GCash InstaPay QR code"></div></details>
   <ol class="steps"></ol>
   <button class="btn small ghost tog">Track on map</button>
+  <button class="btn small cancel-order" hidden>Cancel order</button>
   <div class="omap" hidden></div>
   <small data-note></small>
 </div>
@@ -41,6 +42,7 @@ function paint(card, o) {
   const b = card.querySelector('[data-pay]'); b.textContent = t; b.className = 'pbadge ' + k;
   card.querySelector('.qrmore').hidden = !(o.payment === 'online' && o.pay_status !== 'paid');
   card.querySelector('[data-note]').textContent = NOTE[o.order_type] || '';
+  card.querySelector('.cancel-order').hidden = o.status !== 'Received';
 }
 function showMap(card, o, fit) {
   const div = card.querySelector('.omap'); let m = maps[o.id];
@@ -63,6 +65,19 @@ document.querySelectorAll('.order').forEach(card => {
   const o = orders.find(x => x.id === +card.dataset.id), div = card.querySelector('.omap'), tog = card.querySelector('.tog');
   paint(card, o);
   tog.onclick = () => { div.hidden = !div.hidden; tog.textContent = div.hidden ? 'Track on map' : 'Hide map'; if (!div.hidden) showMap(card, o, true); };
+  card.querySelector('.cancel-order').onclick = async () => {
+    if (!confirm(`Cancel order #${o.id}?`)) return;
+    try {
+      const r = await fetch(`/api/orders/${o.id}/cancel`, {method: 'POST',
+        headers: {'X-CSRFToken': document.querySelector('meta[name=csrf]').content}});
+      const result = await r.json();
+      if (!r.ok) throw new Error(result.error || 'Could not cancel this order.');
+      Object.assign(o, result); paint(card, o);
+    } catch (e) {
+      const error = document.getElementById('refresh-error');
+      error.textContent = e.message; error.hidden = false;
+    }
+  };
 });
 async function refresh() {
   const error = document.getElementById('refresh-error');

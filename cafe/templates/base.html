@@ -18,9 +18,11 @@
     <a href="{{ url_for('admin.orders_page') }}" class="{{ 'on' if request.endpoint == 'admin.orders_page' }}">Orders</a>
     <a href="{{ url_for('inventory.ingredients_page') }}" class="{{ 'on' if request.endpoint == 'inventory.ingredients_page' }}">Inventory</a>
     <a href="{{ url_for('inventory.items_page') }}" class="{{ 'on' if request.endpoint == 'inventory.items_page' }}">Menu items</a>
+    <a href="{{ url_for('notifications.admin_page') }}" class="{{ 'on' if request.endpoint == 'notifications.admin_page' }}">Notifications <span id="admin-notify-count" class="notification-count" hidden></span></a>
     {% else %}
     <a href="{{ url_for('menu.menu') }}" class="{{ 'on' if request.endpoint == 'menu.menu' }}">Menu</a>
     <a href="{{ url_for('orders.your_order') }}" class="{{ 'on' if request.endpoint == 'orders.your_order' }}">Your Order</a>
+    <a href="{{ url_for('notifications.page') }}" class="{{ 'on' if request.endpoint == 'notifications.page' }}">Notifications <span id="notify-count" class="notification-count" hidden></span></a>
     <a href="{{ url_for('account.account') }}" class="{{ 'on' if request.endpoint == 'account.account' }}">Account</a>
     {% endif %}
     {% if current_user %}
@@ -33,4 +35,35 @@
 {% for m in get_flashed_messages() %}<p class="flash">{{ m }}</p>{% endfor %}
 {% block content %}{% endblock %}
 </main>
+{% if current_user and not is_admin %}
+<script>
+async function updateNotificationCount() {
+  const response = await fetch('/api/notifications');
+  if (!response.ok) throw new Error('Could not load notification count');
+  const data = await response.json();
+  const badge = document.getElementById('notify-count');
+  if (badge) {
+    badge.textContent = data.unread;
+    badge.hidden = data.unread === 0;
+  }
+}
+updateNotificationCount().catch(error => console.error(error));
+setInterval(() => updateNotificationCount().catch(error => console.error(error)), 30000);
+</script>
+{% elif current_user and is_admin %}
+<script>
+async function updateAdminNotificationCount() {
+  const response = await fetch('/admin/api/notifications');
+  if (!response.ok) throw new Error('Could not load admin notification count');
+  const data = await response.json();
+  const badge = document.getElementById('admin-notify-count');
+  if (badge) {
+    badge.textContent = data.unread;
+    badge.hidden = data.unread === 0;
+  }
+}
+updateAdminNotificationCount().catch(error => console.error(error));
+setInterval(() => updateAdminNotificationCount().catch(error => console.error(error)), 30000);
+</script>
+{% endif %}
 </body></html>

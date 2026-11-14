@@ -7,7 +7,7 @@ from ..auth_utils import check_csrf
 from ..menu_data import CAFE_LOCATION
 from ..repositories import OrderRepository, UserRepository
 from ..stock import OutOfStock
-from .orders import refresh, public_order, set_status, set_payment, stages
+from .orders import OrderStatusLocked, refresh, public_order, set_status, set_payment, stages
 import json
 
 bp = Blueprint("admin", __name__)
@@ -53,7 +53,7 @@ def dashboard():
             qty[l["name"]] += l["qty"]; rev[l["name"]] += l["qty"] * l["price"]
             cats[l.get("cat") or "Other"] += l["qty"] * l["price"]
     days = [today - timedelta(days=n) for n in range(13, -1, -1)]
-    return render_template("admin_dashboard.html", kpi=kpi, page="dash",
+    return render_template("admin/dashboard.html", kpi=kpi, page="dash",
         daily=bars([(d.strftime("%b %d"), per_day[d]) for d in days]),
         top=bars(rev.most_common(8), {k: f"{v} sold" for k, v in qty.items()}),
         cats=bars(cats.most_common()), pay=bars(pay.most_common()), typ=bars(typ.most_common()),
@@ -75,7 +75,26 @@ def orders_page():
         o["when"] = datetime.fromisoformat(r["created_at"]).astimezone(PH).strftime("%b %d, %I:%M %p")
         o["choices"] = stages(r["order_type"]) + ["Cancelled"]
         orders.append(o)
-    return render_template("admin_orders.html", orders=orders, cafe=CAFE_LOCATION, current=st, pay_filter=pay, statuses=ALL_STATUSES, page="orders")
+    return render_template("admin/orders.html", orders=orders, cafe=CAFE_LOCATION, current=st, pay_filter=pay, statuses=ALL_STATUSES, page="orders")
+
+
+@bp.get("/admin/api/order-receipts")
+@admin_required
+def order_receipts():
+    rows = OrderRepository(get_db()).list(limit=200)
+    return jsonify([{
+        "id": order.id,
+        "customer": order.customer_name,
+        "status": order.status,
+        "order_type": order.order_type,
+        "payment": order.payment,
+        "pay_status": order.pay_status,
+        "items": json.loads(order.items_json),
+        "note": order.note,
+        "address": order.dest_address or "",
+        "total": order.total,
+        "created_at": order.created_at,
+    } for order in rows])
 
 
 @bp.get("/admin/api/orders/<int:order_id>/track")
@@ -92,6 +111,8 @@ def update_status(order_id):
     check_csrf()
     try:
         r = set_status(order_id, (request.get_json(silent=True) or {}).get("status"))
+    except OrderStatusLocked as e:
+        return jsonify(error=str(e)), 409
     except OutOfStock as e:
         return jsonify(error=str(e)), 409
     return jsonify(public_order(r)) if r else (jsonify(error="Invalid status"), 400)

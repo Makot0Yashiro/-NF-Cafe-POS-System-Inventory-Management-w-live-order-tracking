@@ -5,7 +5,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage blocked: height just isn't remembered */ } },
 };
 
-/** Wires up the panel rendered by the `dock` macro in admin_dock.html. Returns {open, setTitle}. */
+/** Wires up the panel rendered by the `dock` macro in templates/admin/dock.html. Returns {open, setTitle}. */
 export function createDock(el = document.getElementById('dock')) {
   const head = el.querySelector('.dock-head'), grip = el.querySelector('.dock-grip'), toggle = el.querySelector('.dock-toggle');
   const title = el.querySelector('.dock-title'), main = document.querySelector('main');

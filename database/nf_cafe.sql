@@ -62,6 +62,21 @@ CREATE TABLE IF NOT EXISTS email_otps (
   payload TEXT, attempts INT DEFAULT 0, expires_at VARCHAR(40) NOT NULL, created_at VARCHAR(40) NOT NULL, INDEX (email)
 ) DEFAULT CHARSET=utf8mb4;
 
+-- Customer order updates and cafe-wide announcements
+CREATE TABLE IF NOT EXISTS notifications (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  body VARCHAR(500) NOT NULL,
+  kind VARCHAR(30) NOT NULL DEFAULT 'promo',
+  order_id INT,
+  created_at VARCHAR(40) NOT NULL,
+  read_at VARCHAR(40),
+  INDEX (user_id, read_at),
+  INDEX (created_at),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) DEFAULT CHARSET=utf8mb4;
+
 -- ---- Menu + inventory (the website adds a starter menu the first time it runs; manage it in Admin > Menu items / Inventory) ----
 -- Menu categories, shown under a top-level group (e.g. Food, Beverages)
 CREATE TABLE IF NOT EXISTS categories (
@@ -80,6 +95,21 @@ CREATE TABLE IF NOT EXISTS ingredients (
   unit   VARCHAR(4) NOT NULL,                  -- g / ml / pc
   stock  DECIMAL(12,3) NOT NULL DEFAULT 0,
   low_at DECIMAL(12,3) NOT NULL DEFAULT 0      -- shown as "Low" at or below this
+) DEFAULT CHARSET=utf8mb4;
+
+-- Audit trail of every ingredient restock
+CREATE TABLE IF NOT EXISTS stock_history (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  ingredient_id INT,
+  ingredient_name VARCHAR(80) NOT NULL,
+  amount DECIMAL(12,3) NOT NULL,
+  unit VARCHAR(4) NOT NULL,
+  source VARCHAR(120) NOT NULL,
+  added_by VARCHAR(100) NOT NULL,
+  created_at VARCHAR(40) NOT NULL,
+  INDEX (created_at),
+  INDEX (ingredient_id),
+  FOREIGN KEY (ingredient_id) REFERENCES ingredients(id) ON DELETE SET NULL
 ) DEFAULT CHARSET=utf8mb4;
 
 -- Menu items (id = slug, kept forever so old orders still match)

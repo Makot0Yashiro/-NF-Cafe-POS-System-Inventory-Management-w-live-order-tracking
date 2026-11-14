@@ -1,8 +1,9 @@
 """Admin inventory: the Inventory / Menu items pages and their JSON API (ingredients, menu items, categories).
 Every error is {"error": "..."} with a 4xx status; the pages show that text as-is."""
 import re
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, session
 from ..db import get_db, IntegrityError
 from ..auth_utils import check_csrf
 from .. import catalog, images
@@ -88,13 +89,13 @@ def _commit(make_response):
 @bp.get("/admin/inventory")
 @admin_required
 def ingredients_page():
-    return render_template("admin_inventory.html", page="inventory")
+    return render_template("admin/inventory.html", page="inventory")
 
 
 @bp.get("/admin/menu-items")
 @admin_required
 def items_page():
-    return render_template("admin_menu_items.html", page="items")
+    return render_template("admin/menu_items.html", page="items")
 
 
 # ===================== ingredients =====================
@@ -146,13 +147,29 @@ def edit_ingredient(ing_id):
 @bp.post("/admin/api/ingredients/<int:ing_id>/restock")
 @admin_required
 def restock_ingredient(ing_id):
-    amount = _amount(_body().get("amount"), "Amount", positive=True)
+    d = _body()
+    amount = _amount(d.get("amount"), "Amount", positive=True)
+    source = _text(d, "source", "Supplier / source", 120, required=False) or "Not specified"
     ingredient = _ingredient_or_404(ing_id, lock=True)
     if ingredient.stock + amount > MAX_AMOUNT:
         raise Invalid("That would make the stock too large.")
     ingredient.restock(amount)
     _repository().save_ingredient(ingredient)
+    get_db().execute(
+        "INSERT INTO stock_history(ingredient_id,ingredient_name,amount,unit,source,added_by,created_at) "
+        "VALUES(?,?,?,?,?,?,?)",
+        (ingredient.id, ingredient.name, amount, ingredient.unit, source,
+         session.get("user_name", "Admin"), datetime.now(timezone.utc).isoformat()))
     return _commit(lambda: jsonify(catalog.ingredient(ing_id)))
+
+
+@bp.get("/admin/api/stock-history")
+@admin_required
+def stock_history():
+    rows = get_db().execute(
+        "SELECT ingredient_name,amount,unit,source,added_by,created_at "
+        "FROM stock_history ORDER BY id DESC LIMIT 200").fetchall()
+    return jsonify([{**row, "amount": float(row["amount"])} for row in rows])
 
 
 @bp.delete("/admin/api/ingredients/<int:ing_id>")

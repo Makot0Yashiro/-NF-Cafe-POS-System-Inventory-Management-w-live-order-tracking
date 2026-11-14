@@ -197,6 +197,41 @@ $('delete').onclick = async () => {
 const catDialog = initCategories({getCats: () => cats, getItems: () => items, onChange: next => { cats = next; syncCategories(); }});
 $('manage-cats').onclick = () => catDialog.open();
 
+/* ---------- customer order receipts ---------- */
+const receiptsDialog = $('order-receipts');
+let receipts = [];
+function renderReceipts(rows) {
+  $('receipt-list').innerHTML = rows.length ? rows.map(order => `
+    <article class="receipt-card">
+      <div class="receipt-head"><h3>Order #${esc(order.id)}</h3><span class="badge">${esc(order.status)}</span></div>
+      <div class="receipt-meta"><b>${esc(order.customer || 'Customer')}</b>
+        <span>${esc(new Date(order.created_at).toLocaleString())}</span>
+        <span>${esc(order.order_type)}</span><span>${esc(order.payment)} · ${esc(order.pay_status)}</span></div>
+      ${order.address ? `<p><b>Delivery address:</b> ${esc(order.address)}</p>` : ''}
+      <ul class="receipt-items">${order.items.map(line =>
+        `<li>${qty(line.qty)} × ${esc(line.name)} · ${peso(line.price * line.qty)}${line.note ? `<br><small>Item note: ${esc(line.note)}</small>` : ''}</li>`
+      ).join('')}</ul>
+      ${order.note ? `<p class="receipt-note"><b>Order note:</b> ${esc(order.note)}</p>` : ''}
+      <div class="receipt-total"><span>Total</span><span>${peso(order.total)}</span></div>
+    </article>`).join('') : '<p class="note">No orders match your search.</p>';
+}
+$('view-orders').onclick = async () => {
+  receiptsDialog.showModal();
+  $('receipt-list').innerHTML = '<p class="note">Loading order receipts…</p>';
+  try {
+    receipts = await api('GET', '/admin/api/order-receipts');
+    renderReceipts(receipts);
+  } catch (error) {
+    $('receipt-list').innerHTML = `<p class="ferr">Couldn't load order receipts: ${esc(error.message)}</p>`;
+  }
+};
+$('receipt-search').oninput = () => {
+  const query = $('receipt-search').value.trim().toLowerCase();
+  renderReceipts(receipts.filter(order => [order.id, order.customer, order.status,
+    ...order.items.map(line => line.name)].join(' ').toLowerCase().includes(query)));
+};
+$('receipts-close').onclick = () => receiptsDialog.close();
+
 /* ---------- start ---------- */
 try {
   ({categories: cats, items, ingredients: ings} = await api('GET', API));

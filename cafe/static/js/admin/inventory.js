@@ -3,6 +3,7 @@ import {$, esc, qty, api, toast, stockState} from './api.js';
 import {createDock} from './dock.js';
 
 const API = '/admin/api/ingredients';
+const HISTORY_API = '/admin/api/stock-history';
 const BADGE = {low: 'Low', out: 'Out'};
 const dock = createDock();
 let list = [], filter = 'all', editing = null, restocking = null;
@@ -87,7 +88,7 @@ function openRestock(i) {
   restocking = i;
   $('rs-title').textContent = 'Restock ' + i.name;
   $('rs-now').textContent = `${qty(i.stock)} ${i.unit}`; $('rs-unit').textContent = i.unit;
-  $('rs-amt').value = ''; $('rs-after').textContent = '–'; rsErr();
+  $('rs-amt').value = ''; $('rs-source').value = ''; $('rs-after').textContent = '–'; rsErr();
   dlg.showModal(); $('rs-amt').focus();
 }
 $('rs-amt').oninput = () => {
@@ -99,12 +100,34 @@ $('rs-form').onsubmit = async e => {
   e.preventDefault();
   const amount = +$('rs-amt').value;
   if (!(amount > 0)) return rsErr('Enter an amount greater than 0.');
+  const source = $('rs-source').value.trim();
+  if (!source) return rsErr('Enter the supplier or source of the stock.');
   try {
-    const saved = await api('POST', `${API}/${restocking.id}/restock`, {amount});
+    const saved = await api('POST', `${API}/${restocking.id}/restock`, {amount, source});
     list = list.map(i => i.id === saved.id ? saved : i);
     dlg.close(); toast(`Added ${qty(amount)} ${saved.unit} of ${saved.name}`); render();
   } catch (err) { rsErr(err.message); }
 };
+
+/* ---------- stocking history ---------- */
+const history = $('history');
+$('history-open').onclick = async () => {
+  history.showModal();
+  $('history-list').innerHTML = '<p class="note">Loading stocking history…</p>';
+  try {
+    const rows = await api('GET', HISTORY_API);
+    $('history-list').innerHTML = rows.length ? rows.map(row => {
+      const when = new Date(row.created_at).toLocaleString();
+      return `<article class="history-row"><b>${esc(row.ingredient_name)}</b>
+        <span>+${qty(row.amount)} ${esc(row.unit)}</span>
+        <span>From: ${esc(row.source)}</span><span>Added by: ${esc(row.added_by)}</span>
+        <small>${esc(when)}</small></article>`;
+    }).join('') : '<p class="note">No stock has been added yet.</p>';
+  } catch (err) {
+    $('history-list').innerHTML = `<p class="note">Couldn't load stocking history: ${esc(err.message)}</p>`;
+  }
+};
+$('history-close').onclick = () => history.close();
 
 /* ---------- delete ---------- */
 async function remove(i) {

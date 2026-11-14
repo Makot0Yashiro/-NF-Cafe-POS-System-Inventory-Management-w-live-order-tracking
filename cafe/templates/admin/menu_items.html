@@ -1,16 +1,19 @@
 {% extends "base.html" %}
-{% from "admin_dock.html" import dock %}
+{% from "admin/dock.html" import dock %}
 {% block mainclass %}wide full{% endblock %}
 {% block title %}Menu items · New Found Cafe{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('static', filename='css/inventory.css') }}">{% endblock %}
 {% block content %}
 <h1>Menu items</h1>
 
-<div class="toolbar">
+<div class="toolbar menu-toolbar">
   <div class="chips grouped" id="filters" role="group" aria-label="Filter by category"></div>
   <div class="toolbar-end">
     <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="q" type="search" placeholder="Search items" autocomplete="off" aria-label="Search menu items"></label>
-    <button type="button" class="btn small ghost" id="manage-cats">Manage categories</button>
+    <div class="menu-toolbar-actions">
+      <button type="button" class="btn small ghost" id="view-orders">View orders</button>
+      <button type="button" class="btn small ghost" id="manage-cats">Manage categories</button>
+    </div>
   </div>
 </div>
 <div class="mgrid" id="grid" aria-live="polite"><p class="note">Loading menu items…</p></div>
@@ -87,6 +90,11 @@
       <button class="btn" id="cat-save">Add category</button>
     </div>
   </form>
+</dialog>
+<dialog id="order-receipts" class="modal wide" aria-labelledby="receipts-title">
+  <div class="modal-head"><h2 id="receipts-title">Customer order receipts</h2><button type="button" class="xbtn" id="receipts-close" aria-label="Close order receipts">×</button></div>
+  <label>Search orders<input id="receipt-search" type="search" placeholder="Order number, customer, or item"></label>
+  <div id="receipt-list" class="receipt-list"><p class="note">Select View orders to load receipts.</p></div>
 </dialog>
 <script type="module" src="{{ url_for('static', filename='js/admin/menu_items.js') }}"></script>
 {% endblock %}

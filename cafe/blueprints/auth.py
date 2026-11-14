@@ -63,7 +63,7 @@ def login():
                 return resp
         else:
             flash("Wrong email or password.")
-    return render_template("auth.html", mode="login")
+    return render_template("user/auth.html", mode="login")
 
 
 @bp.route("/admin-login", methods=["GET", "POST"])     # not linked anywhere: staff type the address
@@ -78,7 +78,7 @@ def admin_login():
             session.update(user_id=user.id, user_name=user.name, is_admin=True)
             return redirect(url_for("admin.dashboard"))
         flash("Wrong email or password.")
-    return render_template("admin_login.html")
+    return render_template("admin/login.html")
 
 
 @bp.route("/register", methods=["GET", "POST"])
@@ -101,7 +101,7 @@ def register():
             resp = _begin(email, "register", {"name": name[:60], "pw": User.hash_password(password)})
             if resp:
                 return resp
-    return render_template("auth.html", mode="register")
+    return render_template("user/auth.html", mode="register")
 
 
 @bp.route("/verify", methods=["GET", "POST"])
@@ -131,7 +131,7 @@ def verify():
             session.clear()
             session.update(user_id=uid, user_name=name, is_admin=False)
             return redirect(_safe(request.args.get("next")))
-    return render_template("verify.html", email=_mask(session["otp_email"]))
+    return render_template("user/verify.html", email=_mask(session["otp_email"]))
 
 
 @bp.post("/verify/resend")
@@ -170,19 +170,19 @@ def forgot():
         email = request.form.get("email", "").strip().lower()
         if not valid_email(email):
             flash("Please enter a valid email address.")
-            return render_template("forgot.html")
+            return render_template("user/forgot.html")
         try:
             rid = _send_reset(email)
         except Exception:
             current_app.logger.exception("Could not send the reset email")
             flash("We couldn't send the email. Please check the SMTP settings and try again.")
-            return render_template("forgot.html")
+            return render_template("user/forgot.html")
         if rid is None:
             flash("Please wait a few seconds before asking for another code.")
-            return render_template("forgot.html")
+            return render_template("user/forgot.html")
         session.update(reset_id=rid, reset_email=email)
         return redirect(url_for("auth.reset"))
-    return render_template("forgot.html")
+    return render_template("user/forgot.html")
 
 
 @bp.route("/reset", methods=["GET", "POST"])
@@ -209,7 +209,7 @@ def reset():
                 session.pop("reset_id", None); session.pop("reset_email", None)
                 flash("Your password has been updated. Please log in.")
                 return redirect(url_for("auth.login"))
-    return render_template("reset.html", email=_mask(session["reset_email"]))
+    return render_template("user/reset.html", email=_mask(session["reset_email"]))
 
 
 @bp.post("/reset/resend")

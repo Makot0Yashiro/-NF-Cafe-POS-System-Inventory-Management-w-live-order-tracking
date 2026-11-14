@@ -1,7 +1,7 @@
 """Pages load, and the database sets itself up (once) from an empty database."""
 import os, subprocess, sys
 from werkzeug.exceptions import Forbidden, RequestEntityTooLarge
-from conftest import TEST_DB, connect, drop_database, q
+from conftest import CSRF, TEST_DB, connect, drop_database, q
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -48,8 +48,22 @@ def test_friendly_forbidden_upload_and_server_errors(app):
 
 def test_admin_pages(admin):
     for path in ("/admin", "/admin/orders", "/admin/orders?status=Received", "/admin/orders?pay=pending",
-                 "/admin/inventory", "/admin/menu-items"):
+                 "/admin/inventory", "/admin/menu-items", "/admin/notifications"):
         assert admin.get(path).status_code == 200, path
+
+
+def test_admin_can_broadcast_customer_notification(admin, customer):
+    response = admin.post("/admin/notifications", data={
+        "csrf": CSRF, "title": "New drinks", "body": "Try our new menu items.", "kind": "menu"
+    })
+    assert response.status_code == 302
+    notices = customer.get("/api/notifications").get_json()
+    assert notices["unread"] >= 1
+    notice = next(n for n in notices["notifications"] if n["title"] == "New drinks" and n["kind"] == "menu")
+    response = customer.post(f"/api/notifications/{notice['id']}/read", headers={"X-CSRFToken": CSRF})
+    assert response.status_code == 200 and response.get_json()["read"] is True
+    refreshed = customer.get("/api/notifications").get_json()
+    assert next(n for n in refreshed["notifications"] if n["id"] == notice["id"])["read_at"]
 
 
 def test_starter_data_loaded_once(app):

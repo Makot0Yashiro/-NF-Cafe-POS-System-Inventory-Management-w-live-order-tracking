@@ -53,6 +53,18 @@ def test_ingredient_errors(admin):
     assert r.status_code == 404 and r.is_json
 
 
+def test_restock_records_supplier_and_admin_in_stock_history(admin):
+    ing = ingredients(admin)["Potatoes"]
+    response = admin.post(f"/admin/api/ingredients/{ing['id']}/restock",
+                          json={"amount": 12.5, "source": "Market supplier"}, headers=H)
+    assert response.status_code == 200
+    entry = admin.get("/admin/api/stock-history").get_json()[0]
+    assert entry["ingredient_name"] == "Potatoes"
+    assert entry["amount"] == 12.5 and entry["unit"] == "g"
+    assert entry["source"] == "Market supplier" and entry["added_by"] == "Admin"
+    assert entry["created_at"]
+
+
 # ---------- menu items ----------
 def test_list_menu_items(admin):
     m = admin.get("/admin/api/menu-items").get_json()

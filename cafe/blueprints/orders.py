@@ -8,6 +8,7 @@ from .. import catalog
 from ..models import Order
 from ..repositories import OrderRepository
 from ..stock import StockService, OutOfStock
+from ..notification_service import add_admin_notification, add_user_notification
 
 bp = Blueprint("orders", __name__)
 TRIP_SECONDS = 120   # how long the courier marker takes to move from the cafe to the customer (demo animation)
@@ -49,19 +50,30 @@ def refresh(row):
     return row
 
 
-def _change_order(order_id, status=None, pay_status=None):
+class OrderStatusLocked(Exception):
+    pass
+
+
+def _change_order(order_id, status=None, pay_status=None, user_id=None, expected_status=None):
     """Save a status or payment change together with its stock effect (stock.on_order_change), in one transaction.
     Returns the updated row, None if the change isn't valid, and raises OutOfStock if reopening the order needs stock that's gone."""
     db = get_db()
     db.commit()                                   # start a fresh transaction so FOR UPDATE sees the latest row
     repository = OrderRepository(db)
-    order = repository.get(order_id, lock=True)
+    order = repository.get(order_id, user_id=user_id, lock=True)
     if not order or (status is not None and status not in stages(order.order_type) + ["Cancelled"]) or \
             (pay_status is not None and pay_status not in ("paid", "rejected")):
         db.rollback()
         return None
+    if expected_status is not None and order.status != expected_status:
+        db.rollback()
+        return None
+    if status is not None and order.status in ("Completed", "Delivered"):
+        db.rollback()
+        raise OrderStatusLocked("Completed or delivered orders cannot be changed.")
     try:
         record = order.to_record()
+        old_status, old_pay_status = order.status, order.pay_status
         returned = StockService.on_order_change(db, record, status or order.status, pay_status or order.pay_status)
         if status is not None:
             order.set_status(status)
@@ -71,6 +83,19 @@ def _change_order(order_id, status=None, pay_status=None):
             order.pay_at = now().isoformat()
         order.stock_returned = returned
         repository.save(order)
+        if status is not None and status != old_status:
+            add_user_notification(db, order.user_id, f"Order #{order.id} update",
+                                  f"Your order status is now {status}.", order_id=order.id,
+                                  created_at=order.status_at)
+            if status == "Cancelled":
+                add_admin_notification(db, f"Order #{order.id} cancelled",
+                                       "The order was cancelled.",
+                                       order.id, order.status_at)
+        elif pay_status is not None and pay_status != old_pay_status:
+            add_user_notification(db, order.user_id, f"Order #{order.id} payment update",
+                                  "Your payment was confirmed." if pay_status == "paid" else
+                                  "Your payment was not confirmed. Please contact the cafe.",
+                                  order_id=order.id, created_at=order.pay_at)
         db.commit()
     except Exception:
         db.rollback()
@@ -87,6 +112,10 @@ def set_status(order_id, status):
 def set_payment(order_id, pay_status):
     """Admin: mark an order's payment as 'paid' or 'rejected'. Returns the updated row (or None). May raise OutOfStock."""
     return _change_order(order_id, pay_status=pay_status)
+
+
+def cancel_customer_order(order_id, user_id):
+    return _change_order(order_id, status="Cancelled", user_id=user_id, expected_status="Received")
 
 
 def public_order(r):
@@ -106,7 +135,7 @@ def _own(order_id):
 @login_required
 def your_order():
     rows = [order.to_record() for order in _repository().list(user_id=session["user_id"])]
-    return render_template("order.html", orders=[public_order(refresh(r)) for r in rows], cafe=CAFE_LOCATION)
+    return render_template("user/order.html", orders=[public_order(refresh(r)) for r in rows], cafe=CAFE_LOCATION)
 
 
 @bp.post("/api/orders")
@@ -128,7 +157,11 @@ def create_order():
         if not 0 < qty <= 50:
             return jsonify(error="Invalid item"), 400
         price = catalog.num(item["price"])        # price always comes from the server
-        lines.append({"id": item["id"], "name": item["name"], "cat": item["cat_name"], "price": price, "qty": qty})
+        line = {"id": item["id"], "name": item["name"], "cat": item["cat_name"], "price": price, "qty": qty}
+        custom_note = str(it.get("note", "")).strip()[:200]
+        if custom_note:
+            line["note"] = custom_note
+        lines.append(line)
         stock_lines.append((item, qty))
         subtotal = round(subtotal + price * qty, 2)
     if not lines:
@@ -167,6 +200,12 @@ def create_order():
             pay_ref=ref if payment == "online" else None,
             dest_address=address if otype == "delivery" else None, created_at=ts)
         _repository().save(order)
+        add_user_notification(db, order.user_id, f"Order #{order.id} received",
+                              "We have received your order and will start preparing it soon.",
+                              order_id=order.id, created_at=ts)
+        add_admin_notification(db, f"New order #{order.id}",
+                               f"{order.customer_name} placed a new {otype} order.",
+                               order.id, ts)
         db.commit()
     except OutOfStock as e:
         db.rollback()
@@ -175,6 +214,20 @@ def create_order():
         db.rollback()
         raise
     return jsonify(id=order.id), 201
+
+
+@bp.post("/api/orders/<int:order_id>/cancel")
+@login_required
+def cancel_order(order_id):
+    check_csrf()
+    _own(order_id)
+    try:
+        row = cancel_customer_order(order_id, session["user_id"])
+    except OutOfStock as e:
+        return jsonify(error=str(e)), 409
+    if not row:
+        return jsonify(error="Only orders that are still Received can be cancelled."), 409
+    return jsonify(public_order(row))
 
 
 @bp.get("/api/orders")

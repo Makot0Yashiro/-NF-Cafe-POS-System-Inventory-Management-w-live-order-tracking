@@ -17,4 +17,4 @@ GALLERY = [
 
 @bp.get("/")
 def home():
-    return render_template("home.html", gallery=GALLERY)
+    return render_template("user/home.html", gallery=GALLERY)
